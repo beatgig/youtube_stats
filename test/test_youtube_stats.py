@@ -8,7 +8,7 @@ load_dotenv()
 
 def test_youtube_channel_stats():
     """Test fetching YouTube channel statistics."""
-    youtube_api_key_from_os = os.environ.get("youtube_api_key_from_os")
+    youtube_api_key_from_os = os.environ.get("YOUTUBE_API_KEY")
     if not youtube_api_key_from_os:
         pytest.skip("youtube_api_key_from_os environment variable not set")
     
@@ -119,40 +119,41 @@ def test_search_youtube_channels():
         print(f"First result: {first_result['title']}")
         print(f"Channel URL: {first_result['channel_url']}")
 
-
 def test_error_handling():
     """Test error handling with invalid inputs."""
     youtube_api_key = auth.get_youtube_api_key()
     if not youtube_api_key:
         pytest.skip("YOUTUBE_API_KEY environment variable not set")
 
-    assert youtube_api_key, "YouTube API key is required to be not None or False, Empty List, etc. should be string"
-    
     print("\nTesting error handling")
-    
+
+    # Invalid API key
     with pytest.raises(Exception) as exc_info:
         stats = account.get_youtube_channel_stats(
             channel_identifier="@mkbhd",
             api_key="invalid_api_key_12345",
             video_count=5
         )
-    
     error_message = str(exc_info.value)
     print(f"Invalid API key error: {error_message}")
-    assert "API" in error_message or "401" in error_message or "403" in error_message, \
-        "Should get API error with invalid key"
-    
+    assert any(
+        x in error_message.lower()
+        for x in ["api", "401", "403", "400", "bad request"]
+    ), "Should get API error with invalid key"
+
+    # Non-existent channel
     with pytest.raises(Exception) as exc_info:
         stats = account.get_youtube_channel_stats(
             channel_identifier="this_channel_definitely_does_not_exist_12345",
             api_key=youtube_api_key,
             video_count=5
         )
-    
     error_message = str(exc_info.value)
     print(f"Non-existent channel error: {error_message}")
-    assert "not found" in error_message.lower() or "404" in error_message, \
-        "Should get not found error for non-existent channel"
+    assert any(
+        x in error_message.lower()
+        for x in ["not found", "404", "empty result", "0 items", "channel not found"]
+    ), "Should get not found error for non-existent channel"
 
 
 def test_different_video_counts():

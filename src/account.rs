@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 // YouTube API Response Structures
 #[derive(Debug, Deserialize, Serialize)]
 struct YouTubeChannelResponse {
+    #[serde(default)]
     items: Vec<YouTubeChannel>,
     #[serde(rename = "pageInfo")]
     page_info: Option<PageInfo>,
@@ -155,6 +156,146 @@ struct ErrorDetail {
     reason: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct YouTubeSearchResultId {
+    #[serde(rename = "kind")]
+    kind: String,
+    #[serde(rename = "channelId")]
+    channel_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct YouTubeSearchResultSnippet {
+    title: String,
+    description: String,
+    channelTitle: String,
+    publishedAt: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct YouTubeSearchResult {
+    id: YouTubeSearchResultId,
+    snippet: YouTubeSearchResultSnippet,
+}
+
+#[derive(Debug, Deserialize)]
+struct YouTubeSearchResponse {
+    items: Vec<YouTubeSearchResult>,
+}
+
+
+
+
+//#[derive(Debug, Deserialize)]
+//struct YouTubeSearchItem {
+    //id: SearchItemId,
+    //snippet: SearchSnippet,
+//}
+
+//#[derive(Debug, Deserialize)]
+//struct SearchItemId {
+    //#[serde(rename = "channelId")]
+    //channel_id: Option<String>,
+//}
+
+//#[derive(Debug, Deserialize)]
+//struct SearchSnippet {
+    //title: String,
+    //description: String,
+    //#[serde(rename = "customUrl")]
+    //custom_url: Option<String>,
+//}
+
+
+//#[pyfunction]
+//pub fn fetch_channel_by_url(client: &Client, api_key: &str, channel_url: &str) -> PyResult<YouTubeChannel> {
+    //let url = format!(
+        //"https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails,brandingSettings&id={}&key={}",
+        //channel_id, api_key
+    //);
+    //let resp = client.get(&url).header("Accept", "application/json")
+        //.send()
+        //.map_err(|e| PyValueError::new_err(format!("Request failed: {}", e)))?;
+    //if !resp.status().is_success() {
+        //return Err(PyValueError::new_err(format!("Failed to fetch channel: {}", resp.status())));
+    //}
+    //let data: YouTubeChannelResponse = resp.json()
+        //.map_err(|e| PyValueError::new_err(format!("Failed to parse channel data: {}", e)))?;
+    //data.items.into_iter().next()
+        //.ok_or_else(|| PyValueError::new_err("Channel not found"))
+//}
+
+
+fn fetch_channel_by_url(
+    client: &Client,
+    api_key: &str,
+    channel_identifier: &str,
+) -> PyResult<YouTubeChannel> {
+    let base_url = "https://www.googleapis.com/youtube/v3";
+    let mut url = format!(
+        "{}/channels?part=snippet,statistics,contentDetails,brandingSettings&key={}",
+        base_url, api_key
+    );
+
+    // Determine type
+    if channel_identifier.starts_with("UC") {
+        // channel ID
+        url.push_str(&format!("&id={}", channel_identifier));
+    } else if channel_identifier.starts_with("@") {
+        // handle: search for channel
+        let handle = &channel_identifier[1..];
+        let search_url = format!(
+            "{}/search?part=snippet&type=channel&q={}&key={}",
+            base_url, handle, api_key
+        );
+        let search_resp = client.get(&search_url)
+            .header("Accept", "application/json")
+            .send()
+            .map_err(|e| PyValueError::new_err(format!("Search request failed: {}", e)))?;
+        if !search_resp.status().is_success() {
+            return Err(PyValueError::new_err(format!("Search failed: {}", search_resp.status())));
+        }
+        let search_text = search_resp.text()
+            .map_err(|e| PyValueError::new_err(format!("Failed to read response text: {}", e)))?;
+        println!("--- Full YouTube search response ---\n{}", search_text);
+        let search_data: YouTubeSearchResponse = serde_json::from_str(&search_text)
+            .map_err(|e| PyValueError::new_err(format!("Failed to parse search results: {}", e)))?;
+        let first_channel = search_data.items.into_iter().next()
+            .ok_or_else(|| PyValueError::new_err("Channel not found via handle"))?;
+        // use the channel ID for full fetch
+        if let Some(channel_id) = &first_channel.id.channel_id {
+            return fetch_channel_by_url(client, api_key, channel_id);
+        } else {
+            return Err(PyValueError::new_err("Channel ID not found in search result"));
+        }
+
+    } else {
+        // old username
+        url.push_str(&format!("&forUsername={}", channel_identifier));
+    }
+
+    let resp = client.get(&url)
+        .header("Accept", "application/json")
+        .send()
+        .map_err(|e| PyValueError::new_err(format!("Request failed: {}", e)))?;
+
+    if !resp.status().is_success() {
+        return Err(PyValueError::new_err(format!("Failed to fetch channel: {}", resp.status())));
+    }
+
+    let data_text = resp.text()
+        .map_err(|e| PyValueError::new_err(format!("Failed to read response text: {}", e)))?;
+
+    println!("--- Full YouTube channel response ---\n{}", data_text);
+
+    let data: YouTubeChannelResponse = serde_json::from_str(&data_text) 
+        .map_err(|e| PyValueError::new_err(format!("Failed to parse channel data: {}", e)))?;
+
+    data.items.into_iter().next()
+        .ok_or_else(|| PyValueError::new_err("Channel not found"))
+}
+
+
 /// Get YouTube channel statistics and recent videos
 /// 
 /// # Arguments
@@ -175,82 +316,9 @@ pub fn get_youtube_channel_stats(
     let videos_to_fetch = video_count.unwrap_or(10);
     
     // First, try to get channel info
-    // Try different approaches: by ID, by username, or by custom URL
-    let mut channel_url = format!(
-        "{}/channels?part=snippet,statistics,contentDetails,brandingSettings&key={}",
-        base_url, api_key
-    );
-    
-    // Check if it looks like a channel ID (starts with UC)
-    if channel_identifier.starts_with("UC") {
-        channel_url.push_str(&format!("&id={}", channel_identifier));
-    } else if channel_identifier.starts_with("@") {
-        // Handle @ usernames (custom URLs)
-        let username = &channel_identifier[1..];
-        channel_url = format!(
-            "{}/search?part=snippet&type=channel&q={}&key={}",
-            base_url, username, api_key
-        );
-    } else {
-        // Try as username first
-        channel_url.push_str(&format!("&forUsername={}", channel_identifier));
-    }
-    
-    let response = client.get(&channel_url)
-        .header("Accept", "application/json")
-        .send()
-        .map_err(|e| PyValueError::new_err(format!("Request failed: {}", e)))?;
-    
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_text = response.text()
-            .unwrap_or_else(|_| "Could not read error response".to_string());
-        
-        // Try to parse as error response
-        if let Ok(error_resp) = serde_json::from_str::<YouTubeErrorResponse>(&error_text) {
-            return Err(PyValueError::new_err(format!(
-                "YouTube API Error {}: {} - {}",
-                error_resp.error.code,
-                error_resp.error.message,
-                error_resp.error.errors.first()
-                    .map(|e| e.reason.as_str())
-                    .unwrap_or("Unknown reason")
-            )));
-        }
-        
-        return Err(PyValueError::new_err(format!(
-            "Failed to fetch channel data: {} - {}",
-            status, error_text
-        )));
-    }
-    
-    let channel_data: YouTubeChannelResponse = response.json()
-        .map_err(|e| PyValueError::new_err(format!("Failed to parse channel data: {}", e)))?;
-    
-    // Handle search results differently if we searched by custom URL
-    let channel = if channel_identifier.starts_with("@") && !channel_data.items.is_empty() {
-        // For search results, we need to fetch the full channel data
-        let channel_id = &channel_data.items[0].id;
-        let full_channel_url = format!(
-            "{}/channels?part=snippet,statistics,contentDetails,brandingSettings&id={}&key={}",
-            base_url, channel_id, api_key
-        );
-        
-        let full_response = client.get(&full_channel_url)
-            .header("Accept", "application/json")
-            .send()
-            .map_err(|e| PyValueError::new_err(format!("Request failed: {}", e)))?;
-        
-        let full_channel_data: YouTubeChannelResponse = full_response.json()
-            .map_err(|e| PyValueError::new_err(format!("Failed to parse channel data: {}", e)))?;
-        
-        full_channel_data.items.into_iter().next()
-            .ok_or_else(|| PyValueError::new_err("Channel not found"))?
-    } else {
-        channel_data.items.into_iter().next()
-            .ok_or_else(|| PyValueError::new_err("Channel not found"))?
-    };
-    
+    let channel = fetch_channel_by_url(&client, &api_key, &channel_identifier)
+        .map_err(|e| PyValueError::new_err(format!("Failed to fetch channel: {}", e)))?;
+
     // Get recent videos if we have an uploads playlist
     let mut recent_videos = Vec::new();
     
@@ -467,32 +535,48 @@ pub fn search_youtube_channels(
         .header("Accept", "application/json")
         .send()
         .map_err(|e| PyValueError::new_err(format!("Request failed: {}", e)))?;
-    
+
     if !response.status().is_success() {
         let status = response.status();
         let error_text = response.text()
             .unwrap_or_else(|_| "Could not read error response".to_string());
         return Err(PyValueError::new_err(format!("Search failed: {} - {}", status, error_text)));
     }
+
+
+    let response_text = response.text()
+        .map_err(|e| PyValueError::new_err(format!("Failed to read response text: {}", e)))?;
+
+    // --- Log the raw JSON from YouTube ---
+    println!("--- Full YouTube search response ---\n{}", response_text);
+
+
+
     
-    let search_results: YouTubeChannelResponse = response.json()
+    let search_results: YouTubeSearchResponse = serde_json::from_str(&response_text)
         .map_err(|e| PyValueError::new_err(format!("Failed to parse search results: {}", e)))?;
     
     Python::with_gil(|py| {
-        let py_list = PyList::new(py, search_results.items.iter().map(|channel| {
-            let channel_dict = PyDict::new(py);
-            channel_dict.set_item("channel_id", &channel.id).unwrap();
-            channel_dict.set_item("title", &channel.snippet.title).unwrap();
-            channel_dict.set_item("description", &channel.snippet.description).unwrap();
-            channel_dict.set_item("channel_url", format!("https://www.youtube.com/channel/{}", channel.id)).unwrap();
-            
-            if let Some(custom_url) = &channel.snippet.custom_url {
-                channel_dict.set_item("custom_url", custom_url).unwrap();
-            }
-            
-            channel_dict
-        }));
-        
-        Ok(py_list.into())
+        let py_dicts: Vec<Py<PyDict>> = search_results.items.iter()
+            .filter_map(|item| {
+                if let Some(channel_id) = &item.id.channel_id {
+                    let channel_dict = PyDict::new(py);
+                    channel_dict.set_item("channel_id", channel_id).unwrap();
+                    channel_dict.set_item("title", &item.snippet.title).unwrap();
+                    channel_dict.set_item("description", &item.snippet.description).unwrap();
+                    channel_dict.set_item(
+                        "channel_url",
+                        format!("https://www.youtube.com/channel/{}", channel_id)
+                    ).unwrap();
+                    Some(channel_dict.into())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        Ok(PyList::new(py, py_dicts).into())
     })
+
+
 }
