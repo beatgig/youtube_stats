@@ -48,17 +48,7 @@ jobs:
           
           print(f"Using version: {version}")
       
-      - name: Build wheels (Linux manylinux2014)
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-          docker run --rm -v $(pwd):/io quay.io/pypa/manylinux2014_x86_64 /bin/bash -c "
-            python3 -m ensurepip --upgrade &&
-            python3 -m pip install --upgrade pip maturin &&
-            maturin build --release --strip --out /io/dist --interpreter python3.12
-          "
-
-      - name: Build wheels (Windows/macOS)
-        if: matrix.os != 'ubuntu-latest'
+      - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
