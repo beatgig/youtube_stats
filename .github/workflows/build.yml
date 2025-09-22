@@ -1,0 +1,134 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+jobs:
+  build_wheels:
+    name: Build wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin toml
+      
+      - name: Get version from pyproject.toml
+        id: get_version
+        shell: python
+        run: |
+          import os
+          import toml
+          
+          # Read the version from pyproject.toml
+          with open('pyproject.toml', 'r') as f:
+              data = toml.load(f)
+              version = data['tool']['poetry']['version']
+          
+          # Set output for GitHub Actions
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"version={version}\n")
+          
+          print(f"Using version: {version}")
+      
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --strip --out dist --interpreter python3.12
+          
+      - name: Upload wheels as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}
+          path: dist
+
+  release:
+    name: Create GitHub Release
+    needs: build_wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install toml
+      
+      - name: Get version from pyproject.toml
+        id: get_version
+        shell: python
+        run: |
+          import os
+          import toml
+          
+          # Read the version from pyproject.toml
+          with open('pyproject.toml', 'r') as f:
+              data = toml.load(f)
+              version = data['tool']['poetry']['version']
+          
+          # Set output for GitHub Actions
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"version={version}\n")
+          
+          print(f"Using version: {version}")
+      
+      - name: Download Ubuntu wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-ubuntu-latest
+          path: dist/ubuntu
+          
+      - name: Download Windows wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-windows-latest
+          path: dist/windows
+          
+      - name: Download macOS wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-macos-latest
+          path: dist/macos
+          
+      - name: Merge wheel directories
+        run: |
+          mkdir -p dist/all
+          cp -r dist/ubuntu/* dist/all/ || true
+          cp -r dist/windows/* dist/all/ || true
+          cp -r dist/macos/* dist/all/ || true
+          ls -la dist/all
+          
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Release v${{ steps.get_version.outputs.version }}"
+          tag_name: "v${{ steps.get_version.outputs.version }}"
+          files: dist/all/*
+          generate_release_notes: true
+          draft: false
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
