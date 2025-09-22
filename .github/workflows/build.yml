@@ -52,7 +52,8 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --strip --out dist --interpreter python3.12
+          args: ${{ matrix.os == 'ubuntu-latest' && '--release --strip --out dist --interpreter python3.12 --manylinux 2014' || '--release --strip --out dist --interpreter python3.12' }}
+
           
       - name: Upload wheels as artifacts
         uses: actions/upload-artifact@v4
@@ -120,6 +121,14 @@ jobs:
           cp -r dist/windows/* dist/all/ || true
           cp -r dist/macos/* dist/all/ || true
           ls -la dist/all
+        
+      - name: Publish wheels to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.5.0
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          packages_dir: dist/all
+
           
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
