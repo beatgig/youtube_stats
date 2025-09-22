@@ -1,0 +1,27 @@
+[build-system]
+requires = ["maturin>=1.0",]
+build-backend = "maturin"
+
+[tool.poetry]
+name = "youtube_stats"
+version = "0.1.0"
+description = "A Rust library with Python bindings for Youtube Stats"
+authors = ["David Engelmann <david@beatgig.com>",]
+readme = "README.md"
+[[tool.poetry.packages]]
+include = "youtube_stats"
+
+[tool.maturin]
+bindings = "pyo3"
+
+[tool.poetry.dependencies]
+python = ">=3.12,<3.13"
+
+[tool.poetry.dev-dependencies]
+pytest = "^8.0"
+python-dotenv = "^1.0"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "-v --tb=short"
+testpaths = [ "test", ]
