@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
 
-pub mod auth;
 pub mod account;
+pub mod auth;
 
 #[pymodule]
 fn youtube_stats(py: Python, m: &PyModule) -> PyResult<()> {
@@ -9,14 +9,27 @@ fn youtube_stats(py: Python, m: &PyModule) -> PyResult<()> {
     auth_module.add_function(wrap_pyfunction!(auth::get_youtube_api_key, auth_module)?)?;
 
     let account_module = PyModule::new(py, "account")?;
-    account_module.add_function(wrap_pyfunction!(account::get_youtube_channel_stats, account_module)?)?;
-    account_module.add_function(wrap_pyfunction!(account::get_youtube_channels_batch, account_module)?)?;
-    account_module.add_function(wrap_pyfunction!(account::search_youtube_channels, account_module)?)?;
+    account_module.add_function(wrap_pyfunction!(
+        account::get_youtube_channel_stats,
+        account_module
+    )?)?;
+    account_module.add_function(wrap_pyfunction!(
+        account::get_youtube_channels_batch,
+        account_module
+    )?)?;
+    account_module.add_function(wrap_pyfunction!(
+        account::search_youtube_channels,
+        account_module
+    )?)?;
 
     m.add_submodule(auth_module)?;
     m.add_submodule(account_module)?;
 
-    py.import("sys")?.getattr("modules")?.set_item("youtube_stats.auth", auth_module)?;
-    py.import("sys")?.getattr("modules")?.set_item("youtube_stats.account", account_module)?;
+    py.import("sys")?
+        .getattr("modules")?
+        .set_item("youtube_stats.auth", auth_module)?;
+    py.import("sys")?
+        .getattr("modules")?
+        .set_item("youtube_stats.account", account_module)?;
     Ok(())
 }
