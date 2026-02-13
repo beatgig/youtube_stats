@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [tool.poetry]
 name = "youtube_stats"
-version = "0.1.0"
+version = "0.1.4"
 description = "A Rust library with Python bindings for Youtube Stats"
 authors = ["David Engelmann <david@beatgig.com>",]
 readme = "README.md"
