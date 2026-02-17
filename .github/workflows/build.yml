@@ -120,15 +120,7 @@ jobs:
           cp -r dist/windows/* dist/all/ || true
           cp -r dist/macos/* dist/all/ || true
           ls -la dist/all
-        
-      - name: Publish wheels to PyPI
-        uses: pypa/gh-action-pypi-publish@v1.5.0
-        with:
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
-          packages_dir: dist/all
 
-          
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
